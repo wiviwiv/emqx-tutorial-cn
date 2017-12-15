@@ -34,5 +34,45 @@ mosquitto_sub -t topic -p 8883 --cafile etc/certs/cacert.pem --cert etc/certs/cl
 EMQ 控制台查看连接`用户名`是否替换为证书`CN`。
 
 
-## Client --TLS--HAProxy--TCP--> EMQ
+## Client --TLS--> HAProxy --TCP--> EMQ
+
+HAProxy 通过Proxy Protocol V2 传递客户端证书 CN 到 EMQ。
+
+HAProxy 监听18883端口，并开启 SSL 设置:
+
+```
+listen mqtt-ssl
+    bind *:18883 ssl ca-file /opt/emqttd/etc/certs/emq-ca.pem verify required crt /usr/local/etc/openssl/certs/emq.pem no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
+    mode tcp
+    maxconn 50000
+    timeout client 600s
+    default_backend emq_nodes
+
+backend emq_nodes
+    mode tcp
+    balance source
+    timeout server 50s
+    timeout check 5000
+    server emq1 127.0.0.1:1883 check-send-proxy send-proxy-v2-ssl-cn
+```
+
+EMQ 开启 TCP 1883 端口 `proxy_protocol_timeout`, `peer_cert_as_username` 配置:
+
+```
+## Proxy Protocol V1/2
+listener.tcp.external.proxy_protocol = on
+
+listener.tcp.external.proxy_protocol_timeout = 3s
+
+### Use the PP2_SUBTYPE_SSL_CN from Proxy Protocol V2 as a username.
+listener.tcp.external.peer_cert_as_username = cn
+```
+
+`mosquitto_sub` TLS 连接 HAProxy 18883 端口:
+
+```
+mosquitto_sub -t topic -p 18883 --cafile etc/certs/cacert.pem --cert etc/certs/client-cert.pem --key etc/certs/client-key.pem  --insecure
+```
+
+EMQ 控制台查看连接`用户名`是否替换为证书`CN`。
 
